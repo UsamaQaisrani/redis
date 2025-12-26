@@ -71,6 +71,8 @@ func handleConnection(conn net.Conn) {
 			get(conn, args[0])
 		case "rpush":
 			rpush(conn, args)
+		case "lrange":
+			lrange(conn, args)
 		default:
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}

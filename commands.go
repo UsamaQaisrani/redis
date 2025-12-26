@@ -94,3 +94,32 @@ func rpush(conn net.Conn, args []string) {
 	encodedResponse := EncodeInt(len(list))
 	conn.Write(encodedResponse)
 }
+
+func lrange(conn net.Conn, args []string) {
+	key := args[0]
+	start, err := strconv.Atoi(args[1])
+	end, err := strconv.Atoi(args[2])
+	if err != nil {
+		fmt.Println("Unable to parse the list range")
+		return
+	}
+
+	list, ok := listDict[key]
+	if !ok || start >= len(list) || start > end {
+		list = []string{}
+		encodedResponse := EncodeList([]string{})
+		conn.Write(encodedResponse)
+		return
+	}
+
+	if end >= len(list) {
+		end = len(list) - 1
+	}
+
+	fmt.Println("List:", list)
+	fmt.Println("Start:", start)
+	fmt.Println("End:", end)
+
+	encodedResponse := EncodeList(list[start : end+1])
+	conn.Write(encodedResponse)
+}

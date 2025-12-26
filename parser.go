@@ -87,3 +87,14 @@ func EncodeInt(input int) []byte {
 	res := ":" + strconv.Itoa(input) + "\r\n"
 	return []byte(res)
 }
+
+func EncodeList(input []string) []byte {
+	length := strconv.Itoa(len(input))
+	str := "*" + length + "\r\n"
+	for _, item := range input {
+		currLength := strconv.Itoa(len(item))
+		currItem := "$" + currLength + "\r\n" + item + "\r\n"
+		str += currItem
+	}
+	return []byte(str)
+}
