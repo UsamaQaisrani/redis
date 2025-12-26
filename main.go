@@ -1,6 +1,7 @@
 package main
 
-var dictionary = map[string]any{}
+var strDict = map[string]SetStr{}
+var listDict = map[string][]string{}
 
 func main() {
 	runServer()

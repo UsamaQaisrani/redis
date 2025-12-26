@@ -41,47 +41,34 @@ func handleConnection(conn net.Conn) {
 			continue
 		}
 
-		commandArgs, ok := decodedInput.([]any)
+		commandArgsAny, ok := decodedInput.([]any)
 		if !ok {
-			fmt.Println("Unable to convert decode input to list")
-			continue
+			fmt.Println("Unable to convert decoded input to []any")
+			return
 		}
 
-		command, ok := commandArgs[0].(string)
-		if !ok {
-			fmt.Println("Unable to convert command to string ")
-			continue
+		fmt.Println("DecodedInput:", decodedInput)
+		commandArgs := make([]string, len(commandArgsAny))
+		for i, v := range commandArgsAny {
+			s, ok := v.(string)
+			if !ok {
+				fmt.Println("Element is not a string:", v)
+				continue
+			}
+			commandArgs[i] = s
 		}
+		command := commandArgs[0]
+		args := commandArgs[1:]
 
 		switch strings.ToLower(command) {
 		case "ping":
 			ping(conn, "PONG")
 		case "echo":
-			arg, ok := commandArgs[1].(string)
-			if !ok {
-				fmt.Println("Unable to convert arg to string")
-				continue
-			}
-			echo(conn, arg)
+			echo(conn, args[0])
 		case "set":
-			key, ok := commandArgs[1].(string)
-			if !ok {
-				fmt.Println("Unable to convert SET key to string")
-				return
-			}
-			val, ok := commandArgs[2].(string)
-			if !ok {
-				fmt.Println("Unable to convert SET value to string")
-				return
-			}
-			set(conn, key, val)
+			set(conn, args)
 		case "get":
-			key, ok := commandArgs[1].(string)
-			if !ok {
-				fmt.Println("Unable to convert GET key to string")
-				return
-			}
-			get(conn, key)
+			get(conn, args[0])
 		default:
 			conn.Write([]byte("-ERR unknown command\r\n"))
 		}
