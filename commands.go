@@ -80,16 +80,16 @@ func ping(conn net.Conn, arg string) {
 
 func rpush(conn net.Conn, args []string) {
 	key := args[0]
-	val := args[1]
+	vals := args[1:]
 	list, ok := listDict[key]
 	if !ok {
-		newList := []string{val}
+		newList := []string{}
+		list = newList
 		listDict[key] = newList
-		encodedInt := EncodeInt(1)
-		conn.Write(encodedInt)
-		return
 	}
-	list = append(list, val)
+	for _, val := range vals {
+		list = append(list, val)
+	}
 	listDict[key] = list
 	encodedResponse := EncodeInt(len(list))
 	conn.Write(encodedResponse)
