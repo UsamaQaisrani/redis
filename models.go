@@ -1,6 +1,6 @@
 package main
 
-type SetStr struct {
+type DictStringVal struct {
 	Value     string
 	Expire    string
 	CreatedAt int64

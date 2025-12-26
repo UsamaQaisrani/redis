@@ -14,7 +14,7 @@ func echo(conn net.Conn, arg string) {
 }
 
 func set(conn net.Conn, args []string) {
-	dictValue := SetStr{}
+	dictValue := DictStringVal{}
 	key := args[0]
 	val := args[1]
 	if len(args) == 4 {
@@ -76,4 +76,21 @@ func get(conn net.Conn, key string) {
 func ping(conn net.Conn, arg string) {
 	encodedResonse := EncodeSimpleString(arg)
 	conn.Write(encodedResonse)
+}
+
+func rpush(conn net.Conn, args []string) {
+	key := args[0]
+	val := args[1]
+	list, ok := listDict[key]
+	if !ok {
+		newList := []string{val}
+		listDict[key] = newList
+		encodedInt := EncodeInt(1)
+		conn.Write(encodedInt)
+		return
+	}
+	list = append(list, val)
+	listDict[key] = list
+	encodedResponse := EncodeInt(len(list))
+	conn.Write(encodedResponse)
 }

@@ -1,6 +1,6 @@
 package main
 
-var strDict = map[string]SetStr{}
+var strDict = map[string]DictStringVal{}
 var listDict = map[string][]string{}
 
 func main() {

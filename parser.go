@@ -82,3 +82,8 @@ func EncodeSimpleString(input string) []byte {
 	res := "+" + input + "\r\n"
 	return []byte(res)
 }
+
+func EncodeInt(input int) []byte {
+	res := ":" + strconv.Itoa(input) + "\r\n"
+	return []byte(res)
+}
