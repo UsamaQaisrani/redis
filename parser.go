@@ -1,0 +1,84 @@
+package main
+
+import (
+	"errors"
+	"strconv"
+	"unicode"
+)
+
+func Parse(input string) (any, error) {
+	decodedData, _, err := decode(input, 0)
+	if err != nil {
+		return nil, err
+	}
+	return decodedData, nil
+}
+
+func decode(input string, pos int) (any, int, error) {
+	switch input[pos] {
+	case '*':
+		return decodeArray(input, pos)
+	case '$':
+		return decodeString(input, pos)
+	}
+	return nil, pos, errors.New("Unable to decode the input")
+}
+
+func decodeString(input string, pos int) (string, int, error) {
+	pos++
+	start := pos
+	for unicode.IsNumber(rune(input[pos])) {
+		pos++
+	}
+	length, err := strconv.Atoi(input[start:pos])
+	if err != nil {
+		return input, pos, errors.New("Unable to get the string length.")
+	}
+	// Empty bulk string
+	if length == 0 {
+		pos++
+		return "", pos, nil
+	}
+
+	// Skipping the \r\n
+	pos += 2
+	res := input[pos : pos+length]
+	pos += length + 2
+	return res, pos, nil
+}
+
+func decodeArray(input string, pos int) ([]any, int, error) {
+	pos++
+	start := pos
+	for unicode.IsNumber(rune(input[pos])) {
+		pos++
+	}
+	arrLength, err := strconv.Atoi(input[start:pos])
+	if err != nil {
+		return nil, pos, errors.New("Unable to get the array length.")
+	}
+	arr := make([]any, 0, arrLength)
+	// Skipping the \r\n
+	pos += 2
+
+	for i := 0; i < arrLength; i++ {
+		elem, newPos, err := decode(input, pos)
+		if err != nil {
+			return nil, pos, err
+		}
+		arr = append(arr, elem)
+		pos = newPos
+	}
+	return arr, pos, nil
+}
+
+func EncodeBulkString(input string) []byte {
+	length := strconv.Itoa(len(input))
+	res := "$" + length + "\r\n" + input + "\r\n"
+	return []byte(res)
+}
+
+func EncodeSimpleString(input string) []byte {
+	res := "+" + input + "\r\n"
+	return []byte(res)
+}
