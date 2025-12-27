@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+type Server struct {
+	Conn net.Conn
+}
+
 func runServer() {
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
@@ -14,22 +18,24 @@ func runServer() {
 		os.Exit(1)
 	}
 	for {
+		server := Server{}
 		conn, err := l.Accept()
+		server.Conn = conn
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
+			fmt.Println("Error accepting s.Connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn)
+		go server.handleConn()
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
+func (s Server) handleConn() {
+	defer s.Conn.Close()
 
 	buf := make([]byte, 1024)
 
 	for {
-		n, err := conn.Read(buf)
+		n, err := s.Conn.Read(buf)
 		if err != nil {
 			return
 		}
@@ -47,7 +53,6 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		fmt.Println("DecodedInput:", decodedInput)
 		commandArgs := make([]string, len(commandArgsAny))
 		for i, v := range commandArgsAny {
 			s, ok := v.(string)
@@ -62,19 +67,19 @@ func handleConnection(conn net.Conn) {
 
 		switch strings.ToLower(command) {
 		case "ping":
-			ping(conn, "PONG")
+			s.ping("PONG")
 		case "echo":
-			echo(conn, args[0])
+			s.echo(args[0])
 		case "set":
-			set(conn, args)
+			s.set(args)
 		case "get":
-			get(conn, args[0])
+			s.get(args[0])
 		case "rpush":
-			rpush(conn, args)
+			s.rpush(args)
 		case "lrange":
-			lrange(conn, args)
+			s.lrange(args)
 		default:
-			conn.Write([]byte("-ERR unknown command\r\n"))
+			s.Conn.Write([]byte("-ERR unknown command\r\n"))
 		}
 	}
 }

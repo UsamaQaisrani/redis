@@ -2,18 +2,17 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 	"time"
 )
 
-func echo(conn net.Conn, arg string) {
+func (s Server) echo(arg string) {
 	encodedResponse := EncodeBulkString(arg)
-	conn.Write(encodedResponse)
+	s.Conn.Write(encodedResponse)
 }
 
-func set(conn net.Conn, args []string) {
+func (s Server) set(args []string) {
 	dictValue := DictStringVal{}
 	key := args[0]
 	val := args[1]
@@ -42,13 +41,13 @@ func set(conn net.Conn, args []string) {
 	dictValue.Value = val
 	strDict[key] = dictValue
 	encodedResponse := EncodeSimpleString("OK")
-	conn.Write(encodedResponse)
+	s.Conn.Write(encodedResponse)
 }
 
-func get(conn net.Conn, key string) {
+func (s Server) get(key string) {
 	val, ok := strDict[key]
 	if !ok {
-		conn.Write([]byte("$-1\r\n"))
+		s.Conn.Write([]byte("$-1\r\n"))
 		return
 	}
 
@@ -57,28 +56,28 @@ func get(conn net.Conn, key string) {
 		expTimer, err := strconv.Atoi(val.Expire)
 		if err != nil {
 			fmt.Println("Unable to read the value:", err)
-			conn.Write([]byte("$-1\r\n"))
+			s.Conn.Write([]byte("$-1\r\n"))
 			return
 		}
 
 		expiryMs := createdAt + int64(expTimer)
 		if time.Now().UnixMilli() >= expiryMs {
 			delete(strDict, key)
-			conn.Write([]byte("$-1\r\n"))
+			s.Conn.Write([]byte("$-1\r\n"))
 			return
 		}
 	}
 
 	encodedResponse := EncodeBulkString(val.Value)
-	conn.Write(encodedResponse)
+	s.Conn.Write(encodedResponse)
 }
 
-func ping(conn net.Conn, arg string) {
+func (s Server) ping(arg string) {
 	encodedResonse := EncodeSimpleString(arg)
-	conn.Write(encodedResonse)
+	s.Conn.Write(encodedResonse)
 }
 
-func rpush(conn net.Conn, args []string) {
+func (s Server) rpush(args []string) {
 	key := args[0]
 	vals := args[1:]
 	list, ok := listDict[key]
@@ -92,23 +91,43 @@ func rpush(conn net.Conn, args []string) {
 	}
 	listDict[key] = list
 	encodedResponse := EncodeInt(len(list))
-	conn.Write(encodedResponse)
+	s.Conn.Write(encodedResponse)
 }
 
-func lrange(conn net.Conn, args []string) {
+func (s Server) lrange(args []string) {
 	key := args[0]
 	start, err := strconv.Atoi(args[1])
+	if err != nil {
+		fmt.Println("Unable to parse the range start")
+		return
+	}
 	end, err := strconv.Atoi(args[2])
 	if err != nil {
-		fmt.Println("Unable to parse the list range")
+		fmt.Println("Unable to parse the range end")
 		return
 	}
 
 	list, ok := listDict[key]
-	if !ok || start >= len(list) || start > end {
+	if !ok {
 		list = []string{}
 		encodedResponse := EncodeList([]string{})
-		conn.Write(encodedResponse)
+		s.Conn.Write(encodedResponse)
+		return
+	}
+
+	if start < 0 {
+		adjustedStart := len(list) + start
+		start = max(adjustedStart, 0)
+	}
+
+	if end < 0 {
+		end = len(list) + end
+	}
+
+	if start >= len(list) || start > end {
+		list = []string{}
+		encodedResponse := EncodeList([]string{})
+		s.Conn.Write(encodedResponse)
 		return
 	}
 
@@ -116,10 +135,6 @@ func lrange(conn net.Conn, args []string) {
 		end = len(list) - 1
 	}
 
-	fmt.Println("List:", list)
-	fmt.Println("Start:", start)
-	fmt.Println("End:", end)
-
 	encodedResponse := EncodeList(list[start : end+1])
-	conn.Write(encodedResponse)
+	s.Conn.Write(encodedResponse)
 }
