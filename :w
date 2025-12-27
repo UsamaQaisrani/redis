@@ -183,14 +183,6 @@ func (s Server) LPop(args []string) {
 
 	poppedItem := list[:itemsToRemove]
 	listDict[key] = list[itemsToRemove:]
-
-	var encodedResponse []byte
-
-	if len(poppedItem) > 1 {
-		encodedResponse = EncodeList(poppedItem)
-	} else {
-		encodedResponse = EncodeBulkString(poppedItem[0])
-	}
-
+	encodedResponse := EncodeBulkString(poppedItem)
 	s.Conn.Write(encodedResponse)
 }
