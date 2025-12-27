@@ -82,6 +82,8 @@ func (s Server) handleConn() {
 			s.LPush(args)
 		case "llen":
 			s.LLen(args)
+		case "lpop":
+			s.LPop(args)
 		default:
 			s.Conn.Write([]byte("-ERR unknown command\r\n"))
 		}

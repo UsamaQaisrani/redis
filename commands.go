@@ -163,3 +163,22 @@ func (s Server) LLen(args []string) {
 	encodedResponse := EncodeInt(len(list))
 	s.Conn.Write(encodedResponse)
 }
+
+func (s Server) LPop(args []string) {
+	key := args[0]
+	list, ok := listDict[key]
+	if !ok {
+		s.Conn.Write([]byte("$-1\r\n"))
+		return
+	}
+
+	if len(list) < 1 {
+		s.Conn.Write([]byte("$-1\r\n"))
+		return
+	}
+
+	poppedItem := list[0]
+	listDict[key] = list[1:]
+	encodedResponse := EncodeBulkString(poppedItem)
+	s.Conn.Write(encodedResponse)
+}
