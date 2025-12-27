@@ -67,17 +67,19 @@ func (s Server) handleConn() {
 
 		switch strings.ToLower(command) {
 		case "ping":
-			s.ping("PONG")
+			s.Ping("PONG")
 		case "echo":
-			s.echo(args[0])
+			s.Echo(args[0])
 		case "set":
-			s.set(args)
+			s.Set(args)
 		case "get":
-			s.get(args[0])
+			s.Get(args[0])
 		case "rpush":
-			s.rpush(args)
+			s.RPush(args)
 		case "lrange":
-			s.lrange(args)
+			s.LRange(args)
+		case "lpush":
+			s.LPush(args)
 		default:
 			s.Conn.Write([]byte("-ERR unknown command\r\n"))
 		}

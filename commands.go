@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-func (s Server) echo(arg string) {
+func (s Server) Echo(arg string) {
 	encodedResponse := EncodeBulkString(arg)
 	s.Conn.Write(encodedResponse)
 }
 
-func (s Server) set(args []string) {
+func (s Server) Set(args []string) {
 	dictValue := DictStringVal{}
 	key := args[0]
 	val := args[1]
@@ -44,7 +44,7 @@ func (s Server) set(args []string) {
 	s.Conn.Write(encodedResponse)
 }
 
-func (s Server) get(key string) {
+func (s Server) Get(key string) {
 	val, ok := strDict[key]
 	if !ok {
 		s.Conn.Write([]byte("$-1\r\n"))
@@ -72,12 +72,12 @@ func (s Server) get(key string) {
 	s.Conn.Write(encodedResponse)
 }
 
-func (s Server) ping(arg string) {
+func (s Server) Ping(arg string) {
 	encodedResonse := EncodeSimpleString(arg)
 	s.Conn.Write(encodedResonse)
 }
 
-func (s Server) rpush(args []string) {
+func (s Server) RPush(args []string) {
 	key := args[0]
 	vals := args[1:]
 	list, ok := listDict[key]
@@ -94,7 +94,7 @@ func (s Server) rpush(args []string) {
 	s.Conn.Write(encodedResponse)
 }
 
-func (s Server) lrange(args []string) {
+func (s Server) LRange(args []string) {
 	key := args[0]
 	start, err := strconv.Atoi(args[1])
 	if err != nil {
@@ -136,5 +136,20 @@ func (s Server) lrange(args []string) {
 	}
 
 	encodedResponse := EncodeList(list[start : end+1])
+	s.Conn.Write(encodedResponse)
+}
+
+func (s Server) LPush(args []string) {
+	key := args[0]
+	items := args[1:]
+	list, ok := listDict[key]
+	if !ok {
+		list = []string{}
+	}
+	for _, item := range items {
+		list = append([]string{item}, list...)
+	}
+	listDict[key] = list
+	encodedResponse := EncodeInt(len(list))
 	s.Conn.Write(encodedResponse)
 }
