@@ -80,6 +80,8 @@ func (s Server) handleConn() {
 			s.LRange(args)
 		case "lpush":
 			s.LPush(args)
+		case "llen":
+			s.LLen(args)
 		default:
 			s.Conn.Write([]byte("-ERR unknown command\r\n"))
 		}

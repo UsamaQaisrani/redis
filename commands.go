@@ -153,3 +153,13 @@ func (s Server) LPush(args []string) {
 	encodedResponse := EncodeInt(len(list))
 	s.Conn.Write(encodedResponse)
 }
+
+func (s Server) LLen(args []string) {
+	key := args[0]
+	list, ok := listDict[key]
+	if !ok {
+		list = []string{}
+	}
+	encodedResponse := EncodeInt(len(list))
+	s.Conn.Write(encodedResponse)
+}
