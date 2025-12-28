@@ -199,11 +199,15 @@ func (s *Server) LPop(args []string) []byte {
 }
 
 func (s *Server) BLPop(args []string) []byte {
+	fmt.Println(args)
 	key := args[0]
+	wait, err := strconv.ParseFloat(args[1], 64)
+	if err != nil {
+		return []byte("Unable to parse the time interval to int")
+	}
 	dbVal, ok := DB.Load(key)
 	var data Data
 	if !ok {
-		// Block until an item is added
 		data = Data{
 			Content: make([]string, 0),
 			Waiting: make(map[string][]chan string),
@@ -211,13 +215,23 @@ func (s *Server) BLPop(args []string) []byte {
 	} else {
 		data = dbVal.(Data)
 	}
+	var timeOutCh <-chan time.Time
 	ch := make(chan string)
 	data.Waiting["RPUSH"] = append(data.Waiting["RPUSH"], ch)
 	DB.Store(key, data)
 
-	item := <-ch
-	s.LPop([]string{key})
-	respList := []string{key, item}
-	encodedResponse := EncodeList(respList)
+	if wait > 0 {
+		timeOutCh = time.After(time.Duration(wait * float64(time.Second)))
+	}
+
+	var encodedResponse []byte
+	select {
+	case item := <-ch:
+		s.LPop([]string{key})
+		respList := []string{key, item}
+		encodedResponse = EncodeList(respList)
+	case <-timeOutCh:
+		encodedResponse = []byte("*-1\r\n")
+	}
 	return encodedResponse
 }
