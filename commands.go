@@ -7,119 +7,112 @@ import (
 	"time"
 )
 
-func (s *Server) Echo(arg string) {
+func (s *Server) Echo(arg string) []byte {
 	encodedResponse := EncodeBulkString(arg)
-	s.Conn.Write(encodedResponse)
+	return encodedResponse
 }
 
-func (s *Server) Set(args []string) {
-	dictValue := DictStringVal{}
+func (s *Server) Set(args []string) []byte {
+	data := Data{}
 	key := args[0]
 	val := args[1]
 	if len(args) == 4 {
 		timeFormat := args[2]
 		exp := args[3]
-		createdAt := time.Now().UnixMilli()
-		dictValue.CreatedAt = createdAt
-		switch strings.ToLower(timeFormat) {
-		case "ex":
-			seconds, err := strconv.Atoi(exp)
-			if err != nil {
-				fmt.Println("Unable to convert exp time to string")
-				return
-			}
-			miliseconds := seconds * 1000
-			dictValue.Expire = strconv.Itoa(miliseconds)
-
-		case "px":
-			dictValue.Expire = exp
-		default:
-			fmt.Println("Unknow argument for time format")
-			return
-		}
-	}
-	dictValue.Value = val
-	s.mu.Lock()
-	s.DB.Map[key] = dictValue
-	s.mu.Unlock()
-	encodedResponse := EncodeSimpleString("OK")
-	s.Conn.Write(encodedResponse)
-}
-
-func (s *Server) Get(key string) {
-	val, ok := s.DB.Map[key]
-	if !ok {
-		s.Conn.Write([]byte("$-1\r\n"))
-		return
-	}
-
-	if val.Expire != "" {
-		createdAt := val.CreatedAt
-		expTimer, err := strconv.Atoi(val.Expire)
+		ms, err := strconv.Atoi(exp)
 		if err != nil {
-			fmt.Println("Unable to read the value:", err)
-			s.Conn.Write([]byte("$-1\r\n"))
-			return
+			return nil
 		}
-
-		expiryMs := createdAt + int64(expTimer)
-		if time.Now().UnixMilli() >= expiryMs {
-			delete(s.DB.Map, key)
-			s.Conn.Write([]byte("$-1\r\n"))
-			return
+		if strings.ToUpper(timeFormat) == "PX" {
+			data.ExpiresAt = time.Now().Add(time.Duration(ms) * time.Millisecond).UnixMilli()
 		}
 	}
+	data.Content = val
+	DB.Store(key, data)
+	encodedResponse := EncodeSimpleString("OK")
+	return encodedResponse
+}
+func (s *Server) Get(key string) []byte {
+	val, ok := DB.Load(key)
+	if !ok {
+		return []byte("$-1\r\n")
+	}
 
-	encodedResponse := EncodeBulkString(val.Value)
-	s.Conn.Write(encodedResponse)
+	data := val.(Data)
+
+	if data.ExpiresAt != 0 {
+		fmt.Println("Has Expiry:", data.ExpiresAt)
+		if time.Now().UnixMilli() >= data.ExpiresAt {
+			fmt.Println("Expired")
+			DB.Delete(key)
+			return []byte("$-1\r\n")
+		}
+		fmt.Println("Not Expired")
+	}
+
+	var encodedResponse []byte
+
+	switch data.Content.(type) {
+	case string:
+		strRes := data.Content.(string)
+		encodedResponse = EncodeBulkString(strRes)
+	default:
+		fmt.Println("Unkown type for the value")
+	}
+
+	return encodedResponse
 }
 
-func (s *Server) Ping(arg string) {
+func (s *Server) Ping(arg string) []byte {
 	encodedResonse := EncodeSimpleString(arg)
-	s.Conn.Write(encodedResonse)
+	return encodedResonse
 }
 
-func (s *Server) RPush(args []string) {
+func (s *Server) RPush(args []string) []byte {
 	key := args[0]
 	vals := args[1:]
-	list, ok := s.DB.List[key]
+	dbVal, ok := DB.Load(key)
 	if !ok {
-		newList := []string{}
-		list = newList
-		s.mu.Lock()
-		s.DB.List[key] = newList
-		s.mu.Unlock()
+		dbVal = Data{Content: []string{}}
 	}
+	data := dbVal.(Data)
+	list := data.Content.([]string)
 	for _, val := range vals {
 		list = append(list, val)
 	}
-	s.mu.Lock()
-	s.DB.List[key] = list
-	s.mu.Unlock()
+
+	chs := data.Waiting["RPUSH"]
+	if len(chs) > 0 {
+		ch := chs[0]
+		data.Waiting["RPUSH"] = chs[1:]
+		ch <- vals[0]
+	}
+	data.Content = list
+	DB.Store(key, data)
 	encodedResponse := EncodeInt(len(list))
-	s.Conn.Write(encodedResponse)
+	return encodedResponse
 }
 
-func (s *Server) LRange(args []string) {
+func (s *Server) LRange(args []string) []byte {
 	key := args[0]
 	start, err := strconv.Atoi(args[1])
 	if err != nil {
 		fmt.Println("Unable to parse the range start")
-		return
+		return nil
 	}
 	end, err := strconv.Atoi(args[2])
 	if err != nil {
 		fmt.Println("Unable to parse the range end")
-		return
+		return nil
 	}
 
-	list, ok := s.DB.List[key]
+	dbVal, ok := DB.Load(key)
 	if !ok {
-		list = []string{}
 		encodedResponse := EncodeList([]string{})
-		s.Conn.Write(encodedResponse)
-		return
+		return encodedResponse
 	}
+	data := dbVal.(Data)
+	list := data.Content.([]string)
 
 	if start < 0 {
 		adjustedStart := len(list) + start
@@ -133,8 +126,7 @@ func (s *Server) LRange(args []string) {
 	if start >= len(list) || start > end {
 		list = []string{}
 		encodedResponse := EncodeList([]string{})
-		s.Conn.Write(encodedResponse)
-		return
+		return encodedResponse
 	}
 
 	if end >= len(list) {
@@ -142,59 +134,58 @@ func (s *Server) LRange(args []string) {
 	}
 
 	encodedResponse := EncodeList(list[start : end+1])
-	s.Conn.Write(encodedResponse)
+	return encodedResponse
 }
 
-func (s *Server) LPush(args []string) {
+func (s *Server) LPush(args []string) []byte {
 	key := args[0]
 	items := args[1:]
-	list, ok := s.DB.List[key]
+	dbVal, ok := DB.Load(key)
 	if !ok {
-		s.mu.Lock()
-		list = []string{}
-		s.mu.Unlock()
+		dbVal = Data{Content: []string{}}
 	}
-	s.mu.Lock()
+	data := dbVal.(Data)
+	list := data.Content.([]string)
 	for _, item := range items {
 		list = append([]string{item}, list...)
 	}
-	s.DB.List[key] = list
-	s.mu.Unlock()
+	data.Content = list
+	DB.Store(key, data)
 	encodedResponse := EncodeInt(len(list))
-	s.Conn.Write(encodedResponse)
+	return encodedResponse
 }
 
-func (s *Server) LLen(args []string) {
+func (s *Server) LLen(args []string) []byte {
 	key := args[0]
-	list, ok := s.DB.List[key]
+	dbVal, ok := DB.Load(key)
 	if !ok {
-		list = []string{}
+		dbVal = Data{Content: []string{}}
 	}
+	data := dbVal.(Data)
+	list := data.Content.([]string)
 	encodedResponse := EncodeInt(len(list))
-	s.Conn.Write(encodedResponse)
+	return encodedResponse
 }
 
-func (s *Server) LPop(args []string) {
+func (s *Server) LPop(args []string) []byte {
 	key := args[0]
 	itemsToRemove := 1
 	if len(args) == 2 {
 		itemsToRemove, _ = strconv.Atoi(args[1])
 	}
-	list, ok := s.DB.List[key]
+	dbVal, ok := DB.Load(key)
 	if !ok {
-		s.Conn.Write([]byte("$-1\r\n"))
-		return
+		return []byte("$-1\r\n")
 	}
-
+	data := dbVal.(Data)
+	list := data.Content.([]string)
 	if len(list) < 1 {
-		s.Conn.Write([]byte("$-1\r\n"))
-		return
+		return []byte("$-1\r\n")
 	}
 
-	s.mu.Lock()
 	poppedItem := list[:itemsToRemove]
-	s.DB.List[key] = list[itemsToRemove:]
-	s.mu.Unlock()
+	data.Content = list[itemsToRemove:]
+	DB.Store(key, data)
 
 	var encodedResponse []byte
 
@@ -204,17 +195,29 @@ func (s *Server) LPop(args []string) {
 		encodedResponse = EncodeBulkString(poppedItem[0])
 	}
 
-	s.Conn.Write(encodedResponse)
+	return encodedResponse
 }
 
-func (s *Server) BLPop(args []string) {
-	// key := args[0]
-	// list, ok := s.DB.List[key]
-	// if !ok {
-	// 	// Block until an item is added
-	// 	list = []string{}
-	// } else {
-	// 	s.LPop(args)
-	// }
-	fmt.Println("BLPOP called")
+func (s *Server) BLPop(args []string) []byte {
+	key := args[0]
+	dbVal, ok := DB.Load(key)
+	var data Data
+	if !ok {
+		// Block until an item is added
+		data = Data{
+			Content: make([]string, 0),
+			Waiting: make(map[string][]chan string),
+		}
+	} else {
+		data = dbVal.(Data)
+	}
+	ch := make(chan string)
+	data.Waiting["RPUSH"] = append(data.Waiting["RPUSH"], ch)
+	DB.Store(key, data)
+
+	item := <-ch
+	s.LPop([]string{key})
+	respList := []string{key, item}
+	encodedResponse := EncodeList(respList)
+	return encodedResponse
 }

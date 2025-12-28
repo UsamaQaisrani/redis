@@ -12,18 +12,18 @@ type DictStringVal struct {
 }
 
 type Server struct {
-	Conn  net.Conn
-	mu    sync.Mutex
-	Queue []Command
-	DB    DB
+	Conn   net.Conn
+	mu     sync.Mutex
+	BLOCKQ []Command
+}
+
+type Data struct {
+	Content   any
+	ExpiresAt int64
+	Waiting   map[string][]chan string
 }
 
 type Command struct {
 	Name     string
 	WaitTime int64
-}
-
-type DB struct {
-	List map[string][]string
-	Map  map[string]DictStringVal
 }
