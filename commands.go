@@ -214,7 +214,11 @@ func (s *Server) BLPop(args []string) []byte {
 		}
 	} else {
 		data = dbVal.(Data)
+		if data.Waiting == nil {
+			data.Waiting = make(map[string][]chan string)
+		}
 	}
+
 	var timeOutCh <-chan time.Time
 	ch := make(chan string)
 	data.Waiting["RPUSH"] = append(data.Waiting["RPUSH"], ch)
@@ -234,4 +238,22 @@ func (s *Server) BLPop(args []string) []byte {
 		encodedResponse = []byte("*-1\r\n")
 	}
 	return encodedResponse
+}
+func (s *Server) Type(args []string) []byte {
+	key := args[0]
+	dbVal, ok := DB.Load(key)
+	var encodedResonse []byte
+	if !ok {
+		return EncodeSimpleString("none")
+	}
+
+	data := dbVal.(Data)
+
+	switch data.Content.(type) {
+	case string:
+		encodedResonse = EncodeSimpleString("string")
+	case []string:
+		encodedResonse = EncodeSimpleString("list")
+	}
+	return encodedResonse
 }

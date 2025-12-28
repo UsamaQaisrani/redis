@@ -70,27 +70,29 @@ func (s *Server) readCommand() (command string, args []string) {
 
 func (s *Server) handleCommands(command string, args []string) {
 	var response []byte
-	switch strings.ToLower(command) {
-	case "ping":
+	switch strings.ToUpper(command) {
+	case "PING":
 		response = s.Ping("PONG")
-	case "echo":
+	case "ECHO":
 		response = s.Echo(args[0])
-	case "set":
+	case "SET":
 		response = s.Set(args)
-	case "get":
+	case "GET":
 		response = s.Get(args[0])
-	case "rpush":
+	case "RPUSH":
 		response = s.RPush(args)
-	case "lrange":
+	case "LRANGE":
 		response = s.LRange(args)
-	case "lpush":
+	case "LPUSH":
 		response = s.LPush(args)
-	case "llen":
+	case "LLEN":
 		response = s.LLen(args)
-	case "lpop":
+	case "LPOP":
 		response = s.LPop(args)
-	case "blpop":
+	case "BLPOP":
 		response = s.BLPop(args)
+	case "TYPE":
+		response = s.Type(args)
 	default:
 		response = []byte("-ERR unknown command\r\n")
 	}
