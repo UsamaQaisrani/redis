@@ -98,3 +98,8 @@ func EncodeList(input []string) []byte {
 	}
 	return []byte(str)
 }
+
+func EncodeSimpleError(input string) []byte {
+	res := "-" + input + "\r\n"
+	return []byte(res)
+}
