@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 )
 
-func validateXADDKey(streams map[string][]Stream, key, id string) (bool, error) {
+func validateStreamId(streams map[string][]Stream, key, id string) (bool, error) {
 	streamList := streams[key]
 	currSplitParts := strings.Split(id, "-")
 	currMiliSeconds, err := strconv.Atoi(currSplitParts[0])
@@ -16,6 +18,7 @@ func validateXADDKey(streams map[string][]Stream, key, id string) (bool, error) 
 	if err != nil {
 		return false, err
 	}
+
 	if len(streamList) > 0 {
 		prevStream := streamList[len(streamList)-1]
 		prevSplitParts := strings.Split(prevStream.StreamID, "-")
@@ -39,4 +42,79 @@ func validateXADDKey(streams map[string][]Stream, key, id string) (bool, error) 
 	miliSecondsNotZero := currMiliSeconds >= 0
 	currSeqNotZero := currSequence > 0
 	return miliSecondsNotZero && currSeqNotZero, nil
+}
+
+func generateStreamId(stream map[string][]Stream, key, id string) (string, error) {
+
+	// If the stream is empty for a given time part, the sequence number starts at 0.
+	// If there are already entries with the same time part, the new sequence number is the last sequence number plus 1.
+	// The only exception is when the time part is 0. In that case, the default sequence number starts at 1.
+
+	streamList := stream[key]
+	idType := getStreamIdType(id)
+
+	switch idType {
+	case 1:
+		// Explicit StreamId
+		valid, err := validateStreamId(stream, key, id)
+		if err != nil || !valid {
+			return "", errors.New("StreamId is not valid.")
+		}
+		return id, nil
+	case 2:
+		// Partially Generate StreamId
+		if len(streamList) > 0 {
+			prevStream := streamList[len(streamList)-1]
+			prevSplitParts := strings.Split(prevStream.StreamID, "-")
+			prevMiliSeconds, err := strconv.Atoi(prevSplitParts[0])
+			if err != nil {
+				return "", errors.New("Unable to convert prev miliseconds to integer")
+			}
+			prevSequence, err := strconv.Atoi(prevSplitParts[1])
+			if err != nil {
+				return "", err
+			}
+
+			currSplitParts := strings.Split(id, "-")
+			currMiliSeconds, err := strconv.Atoi(currSplitParts[0])
+
+			if currMiliSeconds > prevMiliSeconds {
+				newId := fmt.Sprintf("%d-%d", currMiliSeconds, 0)
+				return newId, nil
+			} else if currMiliSeconds == prevMiliSeconds {
+				newId := fmt.Sprintf("%d-%d", currMiliSeconds, prevSequence+1)
+				return newId, nil
+			} else {
+				newId := fmt.Sprintf("%d-%d", currMiliSeconds)
+				return newId, errors.New("Invalid StreamId")
+			}
+
+		} else {
+			return "0-1", nil
+		}
+	case 3:
+		// Auto-Generate StreamId
+		fmt.Println("Auto-Generate")
+	}
+	return "0-1", errors.New("Invalid StreamId format")
+}
+
+func getStreamIdType(id string) int16 {
+
+	// 1- Explicit (1526919030473-0)
+	// 2- Auto-generate only the sequence number (1526919030474-*)
+	// 3- Auto-generate the time part and sequence number (*)
+
+	if id[0] == '*' {
+		return 3
+	}
+
+	splitParts := strings.Split(id, "-")
+	seq := splitParts[1]
+
+	if seq == "*" {
+		return 2
+	}
+
+	return 1
 }

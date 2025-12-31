@@ -280,13 +280,8 @@ func (s *Server) XADD(args []string) []byte {
 	data := dbVal.(Data)
 	streams := data.Content.(map[string][]Stream)
 
-	validStream, err := validateXADDKey(streams, key, id)
+	newId, err := generateStreamId(streams, key, id)
 	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-
-	if !validStream {
 		encodedResponse = EncodeSimpleError("ERR The ID specified in XADD is equal or smaller than the target stream top item")
 		return encodedResponse
 	}
@@ -300,8 +295,8 @@ func (s *Server) XADD(args []string) []byte {
 		i += 2
 	}
 
-	streams[key] = append(streams[key], Stream{StreamID: id, KeyValuePairs: pairs})
+	streams[key] = append(streams[key], Stream{StreamID: newId, KeyValuePairs: pairs})
 	data.Content = streams
 	DB.Store(key, data)
-	return EncodeBulkString(id)
+	return EncodeBulkString(newId)
 }
