@@ -93,6 +93,8 @@ func (s *Server) handleCommands(command string, args []string) {
 		response = s.BLPop(args)
 	case "TYPE":
 		response = s.Type(args)
+	case "XADD":
+		response = s.XADD(args)
 	default:
 		response = []byte("-ERR unknown command\r\n")
 	}

@@ -27,3 +27,8 @@ type Command struct {
 	Name     string
 	WaitTime int64
 }
+
+type Stream struct {
+	StreamID      string
+	KeyValuePairs map[string]string
+}

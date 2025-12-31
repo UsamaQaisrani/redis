@@ -242,18 +242,48 @@ func (s *Server) BLPop(args []string) []byte {
 func (s *Server) Type(args []string) []byte {
 	key := args[0]
 	dbVal, ok := DB.Load(key)
-	var encodedResonse []byte
+	var encodedResponse []byte
 	if !ok {
+		fmt.Printf("Content Type: %T", dbVal)
 		return EncodeSimpleString("none")
 	}
 
 	data := dbVal.(Data)
 
+	fmt.Printf("Content Type: %T", data.Content)
+
 	switch data.Content.(type) {
 	case string:
-		encodedResonse = EncodeSimpleString("string")
+		encodedResponse = EncodeSimpleString("string")
 	case []string:
-		encodedResonse = EncodeSimpleString("list")
+		encodedResponse = EncodeSimpleString("list")
+	case map[string][]Stream:
+		encodedResponse = EncodeSimpleString("stream")
 	}
-	return encodedResonse
+	return encodedResponse
+}
+
+func (s *Server) XADD(args []string) []byte {
+	key := args[0]
+	id := args[1]
+	dbVal, ok := DB.Load(key)
+	if !ok {
+		dbVal = Data{Content: map[string][]Stream{}}
+	}
+
+	data := dbVal.(Data)
+	streams := data.Content.(map[string][]Stream)
+	pairs := map[string]string{}
+	i := 3
+	for i+1 < len(args) {
+		k := args[i]
+		v := args[i+1]
+		pairs[k] = v
+		i += 2
+	}
+
+	streams[key] = append(streams[key], Stream{StreamID: id, KeyValuePairs: pairs})
+	data.Content = streams
+	DB.Store(key, data)
+	return EncodeBulkString(id)
 }
