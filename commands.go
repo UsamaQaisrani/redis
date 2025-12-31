@@ -87,6 +87,7 @@ func (s *Server) RPush(args []string) []byte {
 		data.Waiting["RPUSH"] = chs[1:]
 		ch <- vals[0]
 	}
+
 	data.Content = list
 	DB.Store(key, data)
 	encodedResponse := EncodeInt(len(list))

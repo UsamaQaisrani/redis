@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func validateStreamId(streams map[string][]Stream, key, id string) (bool, error) {
@@ -95,6 +96,10 @@ func generateStreamId(stream map[string][]Stream, key, id string) (string, error
 	case 3:
 		// Auto-Generate StreamId
 		fmt.Println("Auto-Generate")
+		currTime := time.Now().UnixMilli()
+		newId := fmt.Sprintf("%d-%d", currTime, 0)
+		return newId, nil
+
 	}
 	return "0-1", errors.New("Invalid StreamId format")
 }
