@@ -356,15 +356,16 @@ func (s *Server) XRANGE(args []string) []byte {
 }
 
 func (s *Server) XREAD(args []string) []byte {
-	id := args[len(args)-1]
-	keys := args[1 : len(args)-1]
+	mid := len(args)/2 + 1
+	keys := args[1:mid]
+	ids := args[mid:]
 
 	var buf bytes.Buffer
 	buf.WriteString("*" + strconv.Itoa(len(keys)) + "\r\n")
-	for _, key := range keys {
+	for i, key := range keys {
 		buf.WriteString("*2\r\n")
 		buf.Write(EncodeBulkString(key))
-		currArgs := []string{key, id, "+"}
+		currArgs := []string{key, ids[i], "+"}
 		entries := s.XRANGE(currArgs)
 		buf.Write(entries)
 	}
