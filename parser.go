@@ -103,3 +103,17 @@ func EncodeSimpleError(input string) []byte {
 	res := "-" + input + "\r\n"
 	return []byte(res)
 }
+
+func EncodeStream(input []Stream) []byte {
+	res := "*" + strconv.Itoa(len(input)) + "\r\n"
+	for _, stream := range input {
+		res += "*2\r\n"
+		res += string(EncodeBulkString(stream.StreamID))
+		var kvPairs []string
+		for key, value := range stream.KeyValuePairs {
+			kvPairs = append(kvPairs, key, value)
+		}
+		res += string(EncodeList(kvPairs))
+	}
+	return []byte(res)
+}

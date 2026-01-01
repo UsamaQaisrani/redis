@@ -282,14 +282,15 @@ func (s *Server) XADD(args []string) []byte {
 	streams := data.Content.(map[string][]Stream)
 
 	newId, err := generateStreamId(streams, key, id)
-	if err != nil {
+	if err != nil && newId == "" {
 		encodedResponse = EncodeSimpleError("ERR The ID specified in XADD is equal or smaller than the target stream top item")
 		return encodedResponse
 	}
 
 	pairs := map[string]string{}
-	i := 3
-	for i+1 < len(args) {
+	i := 2
+
+	for i < len(args) {
 		k := args[i]
 		v := args[i+1]
 		pairs[k] = v
@@ -300,4 +301,46 @@ func (s *Server) XADD(args []string) []byte {
 	data.Content = streams
 	DB.Store(key, data)
 	return EncodeBulkString(newId)
+}
+
+func (s *Server) XRANGE(args []string) []byte {
+	key := args[0]
+
+	// The command can accept IDs in the format <millisecondsTime>-<sequenceNumber>,
+	// but the sequence number is optional.
+	var start string
+	end := args[2]
+
+	if strings.Contains(args[1], "-") {
+		start = args[1]
+
+	} else {
+		start = args[1] + "-0"
+	}
+
+	dbVal, ok := DB.Load(key)
+	if !ok {
+		return nil
+	}
+
+	data := dbVal.(Data)
+	streams, ok := data.Content.(map[string][]Stream)
+	if !ok {
+		return nil
+	}
+
+	stream := streams[key]
+
+	if !strings.Contains(end, "-") {
+		end += "-" + strconv.Itoa(len(stream))
+	}
+
+	var streamSlice []Stream
+	for _, entry := range stream {
+		if inRangeStreamId(entry.StreamID, start, end) {
+			streamSlice = append(streamSlice, entry)
+		}
+	}
+
+	return EncodeStream(streamSlice)
 }

@@ -40,8 +40,13 @@ func validateStreamId(streams map[string][]Stream, key, id string) (bool, error)
 			return false, nil
 		}
 	}
-	miliSecondsNotZero := currMiliSeconds >= 0
-	currSeqNotZero := currSequence > 0
+	miliSecondsNotZero := currMiliSeconds > 0 || (currMiliSeconds == 0 && currSequence >= 1)
+	currSeqNotZero := currSequence >= 1
+
+	if currMiliSeconds == 0 && currSequence == 0 {
+		return false, nil
+	}
+
 	return miliSecondsNotZero && currSeqNotZero, nil
 }
 
@@ -69,10 +74,12 @@ func generateStreamId(stream map[string][]Stream, key, id string) (string, error
 			prevSplitParts := strings.Split(prevStream.StreamID, "-")
 			prevMiliSeconds, err := strconv.Atoi(prevSplitParts[0])
 			if err != nil {
+
 				return "", errors.New("Unable to convert prev miliseconds to integer")
 			}
 			prevSequence, err := strconv.Atoi(prevSplitParts[1])
 			if err != nil {
+
 				return "", err
 			}
 
@@ -86,8 +93,7 @@ func generateStreamId(stream map[string][]Stream, key, id string) (string, error
 				newId := fmt.Sprintf("%d-%d", currMiliSeconds, prevSequence+1)
 				return newId, nil
 			} else {
-				newId := fmt.Sprintf("%d-%d", currMiliSeconds)
-				return newId, errors.New("Invalid StreamId")
+				return "", errors.New("Invalid StreamId")
 			}
 
 		} else {
@@ -95,7 +101,6 @@ func generateStreamId(stream map[string][]Stream, key, id string) (string, error
 		}
 	case 3:
 		// Auto-Generate StreamId
-		fmt.Println("Auto-Generate")
 		currTime := time.Now().UnixMilli()
 		newId := fmt.Sprintf("%d-%d", currTime, 0)
 		return newId, nil
@@ -122,4 +127,29 @@ func getStreamIdType(id string) int16 {
 	}
 
 	return 1
+}
+
+func splitStreamId(id string) (miliseconds, sequence int) {
+	splitParts := strings.Split(id, "-")
+	miliseconds, err := strconv.Atoi(splitParts[0])
+	if err != nil {
+		fmt.Println(err)
+		return 0, 0
+	}
+	sequence, err = strconv.Atoi(splitParts[1])
+	if err != nil {
+		fmt.Println(err)
+		return 0, 0
+	}
+	return miliseconds, sequence
+}
+
+func inRangeStreamId(curr, start, end string) bool {
+	currMS, currSeq := splitStreamId(curr)
+	startMS, startSeq := splitStreamId(start)
+	endMS, endSeq := splitStreamId(end)
+
+	msInRange := currMS >= startMS && currMS <= endMS
+	seqInRange := currSeq >= startSeq && currSeq <= endSeq
+	return msInRange && seqInRange
 }
