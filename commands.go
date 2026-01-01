@@ -312,7 +312,13 @@ func (s *Server) XRANGE(args []string) []byte {
 	end := args[2]
 
 	if strings.Contains(args[1], "-") {
-		start = args[1]
+		if args[1] == "-" {
+			// Start from the beginning of the stream
+			start = "0-0"
+		} else {
+			// Start from the id sent by the user
+			start = args[1]
+		}
 
 	} else {
 		start = args[1] + "-0"
