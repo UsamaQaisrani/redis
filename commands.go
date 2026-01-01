@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -352,4 +353,21 @@ func (s *Server) XRANGE(args []string) []byte {
 	}
 
 	return EncodeStream(streamSlice)
+}
+
+func (s *Server) XREAD(args []string) []byte {
+	id := args[len(args)-1]
+	keys := args[1 : len(args)-1]
+
+	var buf bytes.Buffer
+	buf.WriteString("*" + strconv.Itoa(len(keys)) + "\r\n")
+	for _, key := range keys {
+		buf.WriteString("*2\r\n")
+		buf.Write(EncodeBulkString(key))
+		currArgs := []string{key, id, "+"}
+		entries := s.XRANGE(currArgs)
+		buf.Write(entries)
+	}
+
+	return buf.Bytes()
 }
