@@ -338,9 +338,12 @@ func (s *Server) XRANGE(args []string) []byte {
 	stream := streams[key]
 
 	if !strings.Contains(end, "-") {
-		end += "-" + strconv.Itoa(len(stream))
+		if end == "+" {
+			end = start + strconv.Itoa(len(stream))
+		} else {
+			end += "-" + strconv.Itoa(len(stream))
+		}
 	}
-
 	var streamSlice []Stream
 	for _, entry := range stream {
 		if inRangeStreamId(entry.StreamID, start, end) {
