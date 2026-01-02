@@ -96,7 +96,8 @@ func (s *Server) handleCommands(command string, args []string) {
 	case "XADD":
 		response = s.XADD(args)
 	case "XRANGE":
-		response = s.XRANGE(args)
+		streams := s.XRANGE(args)
+		response = EncodeStream(streams)
 	case "XREAD":
 		response = s.XREAD(args)
 	default:

@@ -281,6 +281,12 @@ func (s *Server) XADD(args []string) []byte {
 
 	data := dbVal.(Data)
 	streams := data.Content.(map[string][]Stream)
+	chs := data.Waiting["XADD"]
+	if len(chs) > 0 && data.ExpiresAt > time.Now().UnixMilli() {
+		ch := chs[0]
+		data.Waiting["XADD"] = chs[1:]
+		ch <- key
+	}
 
 	newId, err := generateStreamId(streams, key, id)
 	if err != nil && newId == "" {
@@ -304,7 +310,7 @@ func (s *Server) XADD(args []string) []byte {
 	return EncodeBulkString(newId)
 }
 
-func (s *Server) XRANGE(args []string) []byte {
+func (s *Server) XRANGE(args []string) []Stream {
 	key := args[0]
 
 	// The command can accept IDs in the format <millisecondsTime>-<sequenceNumber>,
@@ -352,23 +358,91 @@ func (s *Server) XRANGE(args []string) []byte {
 		}
 	}
 
-	return EncodeStream(streamSlice)
+	return streamSlice
 }
 
 func (s *Server) XREAD(args []string) []byte {
-	mid := len(args)/2 + 1
-	keys := args[1:mid]
-	ids := args[mid:]
+	// The client sends the command and specifies a timeout in milliseconds.
+	// If there are already entries with IDs greater than the specified ID, the command returns them immediately.
+	// If there are no new entries available, the command blocks and waits.
+	// If a new entry is added to the stream before the timeout expires, the command unblocks and returns the new entry (or entries).
+	// If the timeout expires and no new data has arrived, the server responds with a null array (*-1\r\n).
 
-	var buf bytes.Buffer
-	buf.WriteString("*" + strconv.Itoa(len(keys)) + "\r\n")
-	for i, key := range keys {
-		buf.WriteString("*2\r\n")
-		buf.Write(EncodeBulkString(key))
-		currArgs := []string{key, ids[i], "+"}
-		entries := s.XRANGE(currArgs)
-		buf.Write(entries)
+	shouldBlock := false
+	var mid int
+	var keys []string
+	var ids []string
+	var encodedResponse []byte
+
+	if strings.ToLower(args[0]) == "block" {
+		// Block the read if there are no entries
+		shouldBlock = true
+		currArgs := args[2:]
+		mid = len(currArgs)/2 + 1
+		keys = currArgs[1:mid]
+		ids = currArgs[mid:]
+		id := ids[0]
+
+		if strings.Contains(id, "-") {
+			ms, seq := splitStreamId(id)
+			ids[0] = fmt.Sprintf("%d-%d", ms, seq+1)
+		}
+
+	} else {
+		mid = len(args)/2 + 1
+		keys = args[1:mid]
+		ids = args[mid:]
 	}
 
-	return buf.Bytes()
+	var buf bytes.Buffer
+	streamsMap := map[string][]Stream{}
+	buf.WriteString("*" + strconv.Itoa(len(keys)) + "\r\n")
+	for i, key := range keys {
+		currArgs := []string{key, ids[i], "+"}
+		entries := s.XRANGE(currArgs)
+		streamsMap[key] = entries
+	}
+
+	fmt.Println("MAP:", streamsMap)
+	fmt.Println("Block:", shouldBlock)
+
+	if len(streamsMap[keys[0]]) == 0 && shouldBlock {
+		fmt.Println("Blocking")
+		itemCh := make(chan string)
+		var timeOutCh <-chan time.Time
+
+		timeOut, err := strconv.ParseFloat(args[1], 64)
+		if err != nil {
+			fmt.Println(err.Error())
+			return nil
+		}
+		data := Data{
+			Waiting: make(map[string][]chan string),
+		}
+		fmt.Println("Timeout:", timeOut)
+		if timeOut > 0 {
+			timeOutCh = time.After(time.Duration(timeOut) * time.Millisecond)
+		}
+		data.ExpiresAt = time.Now().UnixMilli() + int64(timeOut)
+		data.Content = map[string][]Stream{}
+		data.Waiting["XADD"] = append(data.Waiting["XADD"], itemCh)
+		DB.Store(keys[0], data)
+
+		select {
+		case newKey := <-itemCh:
+			currArgs := []string{newKey, ids[0], "+"}
+			entries := s.XRANGE(currArgs)
+			streamsMap[newKey] = entries
+			encodedResponse = EncodeXREADResponse(streamsMap)
+			fmt.Println("Got channel response", newKey)
+		case <-timeOutCh:
+			fmt.Println("TimedOut")
+			encodedResponse = []byte("*-1\r\n")
+		}
+		return encodedResponse
+	}
+
+	encodedResponse = EncodeXREADResponse(streamsMap)
+
+	return encodedResponse
 }

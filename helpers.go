@@ -153,3 +153,13 @@ func inRangeStreamId(curr, start, end string) bool {
 	seqInRange := currSeq >= startSeq && currSeq <= endSeq
 	return msInRange && seqInRange
 }
+
+func filterEntries(entries []Stream, lastID string) []Stream {
+	var filtered []Stream
+	for _, e := range entries {
+		if e.StreamID > lastID {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
