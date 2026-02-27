@@ -189,3 +189,15 @@ func resolveStartIdForXREAD(key, id string) string {
 	}
 	return id + "-0"
 }
+
+func getDataType(data Data) string {
+	switch data.Content.(type) {
+	case string:
+		return "string"
+	case []string:
+		return "list"
+	case map[string][]Stream:
+		return "stream"
+	}
+	return "unknown"
+}

@@ -82,11 +82,13 @@ func (s *Server) RPush(args []string) []byte {
 		list = append(list, val)
 	}
 
-	chs := data.Waiting["RPUSH"]
-	if len(chs) > 0 {
-		ch := chs[0]
-		data.Waiting["RPUSH"] = chs[1:]
-		ch <- vals[0]
+	if data.Waiting != nil {
+		chs := data.Waiting["RPUSH"]
+		if len(chs) > 0 {
+			ch := chs[0]
+			data.Waiting["RPUSH"] = chs[1:]
+			ch <- vals[0]
+		}
 	}
 
 	data.Content = list
@@ -201,7 +203,6 @@ func (s *Server) LPop(args []string) []byte {
 }
 
 func (s *Server) BLPop(args []string) []byte {
-	fmt.Println(args)
 	key := args[0]
 	wait, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
@@ -219,6 +220,15 @@ func (s *Server) BLPop(args []string) []byte {
 		if data.Waiting == nil {
 			data.Waiting = make(map[string][]chan string)
 		}
+	}
+
+	list := data.Content.([]string)
+	if len(list) > 0 {
+		popped := list[0]
+		data.Content = list[1:]
+		DB.Store(key, data)
+		respList := []string{key, popped}
+		return EncodeList(respList)
 	}
 
 	var timeOutCh <-chan time.Time
@@ -254,14 +264,8 @@ func (s *Server) Type(args []string) []byte {
 
 	fmt.Printf("Content Type: %T", data.Content)
 
-	switch data.Content.(type) {
-	case string:
-		encodedResponse = EncodeSimpleString("string")
-	case []string:
-		encodedResponse = EncodeSimpleString("list")
-	case map[string][]Stream:
-		encodedResponse = EncodeSimpleString("stream")
-	}
+	dType := getDataType(data)
+	encodedResponse = EncodeSimpleString(dType)
 	return encodedResponse
 }
 
@@ -446,5 +450,29 @@ func (s *Server) XREAD(args []string) []byte {
 
 	encodedResponse = EncodeXREADResponse(streamsMap, keys)
 
+	return encodedResponse
+}
+
+func (s *Server) Incr(args []string) []byte {
+	key := args[0]
+	dbVal, ok := DB.Load(key)
+	var data Data
+	if !ok {
+		data = Data{Content: 1}
+	} else {
+		data = dbVal.(Data)
+	}
+	strVal, ok := data.Content.(string)
+	if !ok {
+		strVal = "0"
+	}
+	numVal, err := strconv.Atoi(strVal)
+	if err != nil {
+		return EncodeSimpleError("ERR value is not an integer or out of range")
+	}
+	numVal++
+	data.Content = numVal
+	DB.Store(key, data)
+	encodedResponse := EncodeInt(data.Content.(int))
 	return encodedResponse
 }

@@ -100,6 +100,9 @@ func (s *Server) handleCommands(command string, args []string) {
 		response = EncodeStream(streams)
 	case "XREAD":
 		response = s.XREAD(args)
+	case "INCR":
+		response = s.Incr(args)
+
 	default:
 		response = []byte("-ERR unknown command\r\n")
 	}
