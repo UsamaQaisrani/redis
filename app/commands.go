@@ -14,8 +14,8 @@ func (s *Server) Echo(arg string) []byte {
 }
 
 func (s *Server) Set(args []string) []byte {
-	if inMulti() {
-		addToMulti("SET", args)
+	if s.inMulti() {
+		s.addToMulti("SET", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	data := Data{}
@@ -38,6 +38,10 @@ func (s *Server) Set(args []string) []byte {
 	return encodedResponse
 }
 func (s *Server) Get(key string) []byte {
+	if s.inMulti() {
+		s.addToMulti("GET", []string{key})
+		return EncodeSimpleString("QUEUED")
+	}
 	val, ok := DB.Load(key)
 	if !ok {
 		return []byte("$-1\r\n")
@@ -74,8 +78,8 @@ func (s *Server) Ping(arg string) []byte {
 }
 
 func (s *Server) RPush(args []string) []byte {
-	if inMulti() {
-		addToMulti("RPUSH", args)
+	if s.inMulti() {
+		s.addToMulti("RPUSH", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	key := args[0]
@@ -106,8 +110,8 @@ func (s *Server) RPush(args []string) []byte {
 }
 
 func (s *Server) LRange(args []string) []byte {
-	if inMulti() {
-		addToMulti("LRANGE", args)
+	if s.inMulti() {
+		s.addToMulti("LRANGE", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	key := args[0]
@@ -154,8 +158,8 @@ func (s *Server) LRange(args []string) []byte {
 }
 
 func (s *Server) LPush(args []string) []byte {
-	if inMulti() {
-		addToMulti("LPUSH", args)
+	if s.inMulti() {
+		s.addToMulti("LPUSH", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	key := args[0]
@@ -188,8 +192,8 @@ func (s *Server) LLen(args []string) []byte {
 }
 
 func (s *Server) LPop(args []string) []byte {
-	if inMulti() {
-		addToMulti("LPOP", args)
+	if s.inMulti() {
+		s.addToMulti("LPOP", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	key := args[0]
@@ -223,8 +227,8 @@ func (s *Server) LPop(args []string) []byte {
 }
 
 func (s *Server) BLPop(args []string) []byte {
-	if inMulti() {
-		addToMulti("BLPOP", args)
+	if s.inMulti() {
+		s.addToMulti("BLPOP", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	key := args[0]
@@ -294,8 +298,8 @@ func (s *Server) Type(args []string) []byte {
 }
 
 func (s *Server) XADD(args []string) []byte {
-	if inMulti() {
-		addToMulti("XADD", args)
+	if s.inMulti() {
+		s.addToMulti("XADD", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	var encodedResponse []byte
@@ -482,8 +486,8 @@ func (s *Server) XREAD(args []string) []byte {
 }
 
 func (s *Server) Incr(args []string) []byte {
-	if inMulti() {
-		addToMulti("INCR", args)
+	if s.inMulti() {
+		s.addToMulti("INCR", args)
 		return EncodeSimpleString("QUEUED")
 	}
 	key := args[0]
@@ -511,36 +515,41 @@ func (s *Server) Incr(args []string) []byte {
 }
 
 func (s *Server) Multi(args []string) []byte {
-	DB.Store("MULTI_QUEUE", Data{Content: [][]string{}})
-	encodedResponse := EncodeSimpleString("OK")
-	return encodedResponse
+	s.TxQueue = [][]string{}
+	return EncodeSimpleString("OK")
 }
 
 func (s *Server) Exec() []byte {
-	val, ok := DB.Load("MULTI_QUEUE")
-	if !ok {
+	if s.TxQueue == nil {
 		return EncodeSimpleError("ERR EXEC without MULTI")
 	}
-	queue := val.(Data).Content.([][]string)
-	var responses []string
+	queue := s.TxQueue
+	s.TxQueue = nil
+	var parts []byte
 	for _, commandArgs := range queue {
 		command := commandArgs[0]
 		args := commandArgs[1:]
+		var elem []byte
 		switch strings.ToUpper(command) {
-		case "PING":
-			responses = append(responses, "PONG")
-		case "ECHO":
-			responses = append(responses, args[0])
 		case "SET":
 			s.Set(args)
-			responses = append(responses, "OK")
+			elem = EncodeSimpleString("OK")
 		case "GET":
-			res := s.Get(args[0])
-			responses = append(responses, string(res))
+			elem = s.Get(args[0])
+		case "INCR":
+			elem = s.Incr(args)
 		default:
-			responses = append(responses, "ERR unknown command")
+			elem = EncodeSimpleError("ERR unknown command")
 		}
+		parts = append(parts, elem...)
 	}
-	DB.Delete("MULTI_QUEUE")
-	return EncodeList(responses)
+	return append([]byte("*"+strconv.Itoa(len(queue))+"\r\n"), parts...)
+}
+
+func (s *Server) Discard() []byte {
+	if s.TxQueue == nil {
+		return EncodeSimpleError("ERR DISCARD without MULTI")
+	}
+	s.TxQueue = nil
+	return EncodeSimpleString("OK")
 }

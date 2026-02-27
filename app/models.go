@@ -12,9 +12,10 @@ type DictStringVal struct {
 }
 
 type Server struct {
-	Conn   net.Conn
-	mu     sync.Mutex
-	BLOCKQ []Command
+	Conn    net.Conn
+	mu      sync.Mutex
+	BLOCKQ  []Command
+	TxQueue [][]string
 }
 
 type Data struct {

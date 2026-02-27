@@ -202,18 +202,10 @@ func getDataType(data Data) string {
 	return "unknown"
 }
 
-func inMulti() bool {
-	_, ok := DB.Load("MULTI_QUEUE")
-	return ok
+func (s *Server) inMulti() bool {
+	return s.TxQueue != nil
 }
 
-func addToMulti(command string, args []string) {
-	dbVal, _ := DB.Load("MULTI_QUEUE")
-	data := dbVal.(Data)
-	multiQueue, ok := data.Content.([][]string)
-	if !ok {
-		multiQueue = [][]string{}
-	}
-	multiQueue = append(multiQueue, append([]string{command}, args...))
-	DB.Store("MULTI_QUEUE", Data{Content: multiQueue})
+func (s *Server) addToMulti(command string, args []string) {
+	s.TxQueue = append(s.TxQueue, append([]string{command}, args...))
 }

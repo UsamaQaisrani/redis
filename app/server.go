@@ -106,6 +106,8 @@ func (s *Server) handleCommands(command string, args []string) {
 		response = s.Multi(args)
 	case "EXEC":
 		response = s.Exec()
+	case "DISCARD":
+		response = s.Discard()
 
 	default:
 		response = []byte("-ERR unknown command\r\n")
