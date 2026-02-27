@@ -14,6 +14,10 @@ func (s *Server) Echo(arg string) []byte {
 }
 
 func (s *Server) Set(args []string) []byte {
+	if inMulti() {
+		addToMulti("SET", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	data := Data{}
 	key := args[0]
 	val := args[1]
@@ -70,6 +74,10 @@ func (s *Server) Ping(arg string) []byte {
 }
 
 func (s *Server) RPush(args []string) []byte {
+	if inMulti() {
+		addToMulti("RPUSH", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	vals := args[1:]
 	dbVal, ok := DB.Load(key)
@@ -98,6 +106,10 @@ func (s *Server) RPush(args []string) []byte {
 }
 
 func (s *Server) LRange(args []string) []byte {
+	if inMulti() {
+		addToMulti("LRANGE", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	start, err := strconv.Atoi(args[1])
 	if err != nil {
@@ -142,6 +154,10 @@ func (s *Server) LRange(args []string) []byte {
 }
 
 func (s *Server) LPush(args []string) []byte {
+	if inMulti() {
+		addToMulti("LPUSH", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	items := args[1:]
 	dbVal, ok := DB.Load(key)
@@ -172,6 +188,10 @@ func (s *Server) LLen(args []string) []byte {
 }
 
 func (s *Server) LPop(args []string) []byte {
+	if inMulti() {
+		addToMulti("LPOP", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	itemsToRemove := 1
 	if len(args) == 2 {
@@ -203,6 +223,10 @@ func (s *Server) LPop(args []string) []byte {
 }
 
 func (s *Server) BLPop(args []string) []byte {
+	if inMulti() {
+		addToMulti("BLPOP", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	wait, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
@@ -270,6 +294,10 @@ func (s *Server) Type(args []string) []byte {
 }
 
 func (s *Server) XADD(args []string) []byte {
+	if inMulti() {
+		addToMulti("XADD", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	var encodedResponse []byte
 	key := args[0]
 	id := args[1]
@@ -454,6 +482,10 @@ func (s *Server) XREAD(args []string) []byte {
 }
 
 func (s *Server) Incr(args []string) []byte {
+	if inMulti() {
+		addToMulti("INCR", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	dbVal, ok := DB.Load(key)
 	var data Data
