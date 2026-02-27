@@ -471,8 +471,44 @@ func (s *Server) Incr(args []string) []byte {
 		return EncodeSimpleError("ERR value is not an integer or out of range")
 	}
 	numVal++
-	data.Content = numVal
+	data.Content = strconv.Itoa(numVal)
+	fmt.Println("Incr:", data.Content)
 	DB.Store(key, data)
-	encodedResponse := EncodeInt(data.Content.(int))
+	encodedResponse := EncodeInt(numVal)
 	return encodedResponse
+}
+
+func (s *Server) Multi(args []string) []byte {
+	DB.Store("MULTI_QUEUE", Data{Content: [][]string{}})
+	encodedResponse := EncodeSimpleString("OK")
+	return encodedResponse
+}
+
+func (s *Server) Exec() []byte {
+	val, ok := DB.Load("MULTI_QUEUE")
+	if !ok {
+		return EncodeSimpleError("ERR EXEC without MULTI")
+	}
+	queue := val.(Data).Content.([][]string)
+	var responses []string
+	for _, commandArgs := range queue {
+		command := commandArgs[0]
+		args := commandArgs[1:]
+		switch strings.ToUpper(command) {
+		case "PING":
+			responses = append(responses, "PONG")
+		case "ECHO":
+			responses = append(responses, args[0])
+		case "SET":
+			s.Set(args)
+			responses = append(responses, "OK")
+		case "GET":
+			res := s.Get(args[0])
+			responses = append(responses, string(res))
+		default:
+			responses = append(responses, "ERR unknown command")
+		}
+	}
+	DB.Delete("MULTI_QUEUE")
+	return EncodeList(responses)
 }

@@ -102,6 +102,10 @@ func (s *Server) handleCommands(command string, args []string) {
 		response = s.XREAD(args)
 	case "INCR":
 		response = s.Incr(args)
+	case "MULTI":
+		response = s.Multi(args)
+	case "EXEC":
+		response = s.Exec()
 
 	default:
 		response = []byte("-ERR unknown command\r\n")
