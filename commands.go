@@ -14,6 +14,10 @@ func (s *Server) Echo(arg string) []byte {
 }
 
 func (s *Server) Set(args []string) []byte {
+	if s.inMulti() {
+		s.addToMulti("SET", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	data := Data{}
 	key := args[0]
 	val := args[1]
@@ -34,6 +38,10 @@ func (s *Server) Set(args []string) []byte {
 	return encodedResponse
 }
 func (s *Server) Get(key string) []byte {
+	if s.inMulti() {
+		s.addToMulti("GET", []string{key})
+		return EncodeSimpleString("QUEUED")
+	}
 	val, ok := DB.Load(key)
 	if !ok {
 		return []byte("$-1\r\n")
@@ -70,6 +78,10 @@ func (s *Server) Ping(arg string) []byte {
 }
 
 func (s *Server) RPush(args []string) []byte {
+	if s.inMulti() {
+		s.addToMulti("RPUSH", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	vals := args[1:]
 	dbVal, ok := DB.Load(key)
@@ -82,11 +94,13 @@ func (s *Server) RPush(args []string) []byte {
 		list = append(list, val)
 	}
 
-	chs := data.Waiting["RPUSH"]
-	if len(chs) > 0 {
-		ch := chs[0]
-		data.Waiting["RPUSH"] = chs[1:]
-		ch <- vals[0]
+	if data.Waiting != nil {
+		chs := data.Waiting["RPUSH"]
+		if len(chs) > 0 {
+			ch := chs[0]
+			data.Waiting["RPUSH"] = chs[1:]
+			ch <- vals[0]
+		}
 	}
 
 	data.Content = list
@@ -96,6 +110,10 @@ func (s *Server) RPush(args []string) []byte {
 }
 
 func (s *Server) LRange(args []string) []byte {
+	if s.inMulti() {
+		s.addToMulti("LRANGE", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	start, err := strconv.Atoi(args[1])
 	if err != nil {
@@ -140,6 +158,10 @@ func (s *Server) LRange(args []string) []byte {
 }
 
 func (s *Server) LPush(args []string) []byte {
+	if s.inMulti() {
+		s.addToMulti("LPUSH", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	items := args[1:]
 	dbVal, ok := DB.Load(key)
@@ -170,6 +192,10 @@ func (s *Server) LLen(args []string) []byte {
 }
 
 func (s *Server) LPop(args []string) []byte {
+	if s.inMulti() {
+		s.addToMulti("LPOP", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	itemsToRemove := 1
 	if len(args) == 2 {
@@ -201,7 +227,10 @@ func (s *Server) LPop(args []string) []byte {
 }
 
 func (s *Server) BLPop(args []string) []byte {
-	fmt.Println(args)
+	if s.inMulti() {
+		s.addToMulti("BLPOP", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	key := args[0]
 	wait, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
@@ -219,6 +248,15 @@ func (s *Server) BLPop(args []string) []byte {
 		if data.Waiting == nil {
 			data.Waiting = make(map[string][]chan string)
 		}
+	}
+
+	list := data.Content.([]string)
+	if len(list) > 0 {
+		popped := list[0]
+		data.Content = list[1:]
+		DB.Store(key, data)
+		respList := []string{key, popped}
+		return EncodeList(respList)
 	}
 
 	var timeOutCh <-chan time.Time
@@ -254,18 +292,16 @@ func (s *Server) Type(args []string) []byte {
 
 	fmt.Printf("Content Type: %T", data.Content)
 
-	switch data.Content.(type) {
-	case string:
-		encodedResponse = EncodeSimpleString("string")
-	case []string:
-		encodedResponse = EncodeSimpleString("list")
-	case map[string][]Stream:
-		encodedResponse = EncodeSimpleString("stream")
-	}
+	dType := getDataType(data)
+	encodedResponse = EncodeSimpleString(dType)
 	return encodedResponse
 }
 
 func (s *Server) XADD(args []string) []byte {
+	if s.inMulti() {
+		s.addToMulti("XADD", args)
+		return EncodeSimpleString("QUEUED")
+	}
 	var encodedResponse []byte
 	key := args[0]
 	id := args[1]
@@ -282,7 +318,9 @@ func (s *Server) XADD(args []string) []byte {
 	data := dbVal.(Data)
 	streams := data.Content.(map[string][]Stream)
 	chs := data.Waiting["XADD"]
-	if len(chs) > 0 && data.ExpiresAt > time.Now().UnixMilli() {
+	fmt.Println(len(chs))
+	fmt.Println(data.ExpiresAt)
+	if len(chs) > 0 && (data.ExpiresAt > time.Now().UnixMilli() || data.ExpiresAt == 0) {
 		ch := chs[0]
 		data.Waiting["XADD"] = chs[1:]
 		ch <- key
@@ -314,11 +352,13 @@ func (s *Server) XRANGE(args []string) []Stream {
 	key := args[0]
 
 	// The command can accept IDs in the format <millisecondsTime>-<sequenceNumber>,
-	// but the sequence number is optional.
+	// but the sequence number is optional. $ means only entries added after the command.
 	var start string
 	end := args[2]
 
-	if strings.Contains(args[1], "-") {
+	if args[1] == "$" {
+		start = resolveStartIdForXREAD(key, "$")
+	} else if strings.Contains(args[1], "-") {
 		if args[1] == "-" {
 			// Start from the beginning of the stream
 			start = "0-0"
@@ -362,12 +402,6 @@ func (s *Server) XRANGE(args []string) []Stream {
 }
 
 func (s *Server) XREAD(args []string) []byte {
-	// The client sends the command and specifies a timeout in milliseconds.
-	// If there are already entries with IDs greater than the specified ID, the command returns them immediately.
-	// If there are no new entries available, the command blocks and waits.
-	// If a new entry is added to the stream before the timeout expires, the command unblocks and returns the new entry (or entries).
-	// If the timeout expires and no new data has arrived, the server responds with a null array (*-1\r\n).
-
 	shouldBlock := false
 	var mid int
 	var keys []string
@@ -381,17 +415,16 @@ func (s *Server) XREAD(args []string) []byte {
 		mid = len(currArgs)/2 + 1
 		keys = currArgs[1:mid]
 		ids = currArgs[mid:]
-		id := ids[0]
-
-		if strings.Contains(id, "-") {
-			ms, seq := splitStreamId(id)
-			ids[0] = fmt.Sprintf("%d-%d", ms, seq+1)
+		for i, key := range keys {
+			ids[i] = resolveStartIdForXREAD(key, ids[i])
 		}
-
 	} else {
 		mid = len(args)/2 + 1
 		keys = args[1:mid]
 		ids = args[mid:]
+		for i, key := range keys {
+			ids[i] = resolveStartIdForXREAD(key, ids[i])
+		}
 	}
 
 	var buf bytes.Buffer
@@ -416,15 +449,20 @@ func (s *Server) XREAD(args []string) []byte {
 			fmt.Println(err.Error())
 			return nil
 		}
-		data := Data{
-			Waiting: make(map[string][]chan string),
-		}
 		fmt.Println("Timeout:", timeOut)
 		if timeOut > 0 {
 			timeOutCh = time.After(time.Duration(timeOut) * time.Millisecond)
 		}
-		data.ExpiresAt = time.Now().UnixMilli() + int64(timeOut)
-		data.Content = map[string][]Stream{}
+		dbVal, ok := DB.Load(keys[0])
+		var data Data
+		if ok {
+			data = dbVal.(Data)
+		} else {
+			data = Data{Content: map[string][]Stream{}}
+		}
+		if data.Waiting == nil {
+			data.Waiting = make(map[string][]chan string)
+		}
 		data.Waiting["XADD"] = append(data.Waiting["XADD"], itemCh)
 		DB.Store(keys[0], data)
 
@@ -433,7 +471,7 @@ func (s *Server) XREAD(args []string) []byte {
 			currArgs := []string{newKey, ids[0], "+"}
 			entries := s.XRANGE(currArgs)
 			streamsMap[newKey] = entries
-			encodedResponse = EncodeXREADResponse(streamsMap)
+			encodedResponse = EncodeXREADResponse(streamsMap, keys)
 			fmt.Println("Got channel response", newKey)
 		case <-timeOutCh:
 			fmt.Println("TimedOut")
@@ -442,7 +480,76 @@ func (s *Server) XREAD(args []string) []byte {
 		return encodedResponse
 	}
 
-	encodedResponse = EncodeXREADResponse(streamsMap)
+	encodedResponse = EncodeXREADResponse(streamsMap, keys)
 
 	return encodedResponse
+}
+
+func (s *Server) Incr(args []string) []byte {
+	if s.inMulti() {
+		s.addToMulti("INCR", args)
+		return EncodeSimpleString("QUEUED")
+	}
+	key := args[0]
+	dbVal, ok := DB.Load(key)
+	var data Data
+	if !ok {
+		data = Data{Content: 1}
+	} else {
+		data = dbVal.(Data)
+	}
+	strVal, ok := data.Content.(string)
+	if !ok {
+		strVal = "0"
+	}
+	numVal, err := strconv.Atoi(strVal)
+	if err != nil {
+		return EncodeSimpleError("ERR value is not an integer or out of range")
+	}
+	numVal++
+	data.Content = strconv.Itoa(numVal)
+	fmt.Println("Incr:", data.Content)
+	DB.Store(key, data)
+	encodedResponse := EncodeInt(numVal)
+	return encodedResponse
+}
+
+func (s *Server) Multi(args []string) []byte {
+	s.TxQueue = [][]string{}
+	return EncodeSimpleString("OK")
+}
+
+func (s *Server) Exec() []byte {
+	if s.TxQueue == nil {
+		return EncodeSimpleError("ERR EXEC without MULTI")
+	}
+	queue := s.TxQueue
+	s.TxQueue = nil
+	var parts []byte
+	for _, commandArgs := range queue {
+		command := commandArgs[0]
+		args := commandArgs[1:]
+		var elem []byte
+		switch strings.ToUpper(command) {
+		case "SET":
+			s.Set(args)
+			elem = EncodeSimpleString("OK")
+		case "GET":
+			elem = s.Get(args[0])
+		case "INCR":
+			elem = s.Incr(args)
+		default:
+			elem = EncodeSimpleError("ERR unknown command")
+		}
+		parts = append(parts, elem...)
+	}
+	return append([]byte("*"+strconv.Itoa(len(queue))+"\r\n"), parts...)
+}
+
+func (s *Server) Discard() []byte {
+	if s.TxQueue == nil {
+		return EncodeSimpleError("ERR DISCARD without MULTI")
+	}
+	s.TxQueue = nil
+	return EncodeSimpleString("OK")
 }

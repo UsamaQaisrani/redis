@@ -163,3 +163,49 @@ func filterEntries(entries []Stream, lastID string) []Stream {
 	}
 	return filtered
 }
+
+func resolveStartIdForXREAD(key, id string) string {
+	if id == "$" {
+		dbVal, ok := DB.Load(key)
+		if !ok {
+			return "0-0"
+		}
+		data := dbVal.(Data)
+		streams, ok := data.Content.(map[string][]Stream)
+		if !ok {
+			return "0-0"
+		}
+		stream := streams[key]
+		if len(stream) == 0 {
+			return "0-0"
+		}
+		lastId := stream[len(stream)-1].StreamID
+		ms, seq := splitStreamId(lastId)
+		return fmt.Sprintf("%d-%d", ms, seq+1)
+	}
+	if strings.Contains(id, "-") {
+		ms, seq := splitStreamId(id)
+		return fmt.Sprintf("%d-%d", ms, seq+1)
+	}
+	return id + "-0"
+}
+
+func getDataType(data Data) string {
+	switch data.Content.(type) {
+	case string:
+		return "string"
+	case []string:
+		return "list"
+	case map[string][]Stream:
+		return "stream"
+	}
+	return "unknown"
+}
+
+func (s *Server) inMulti() bool {
+	return s.TxQueue != nil
+}
+
+func (s *Server) addToMulti(command string, args []string) {
+	s.TxQueue = append(s.TxQueue, append([]string{command}, args...))
+}

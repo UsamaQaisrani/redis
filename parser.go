@@ -119,10 +119,11 @@ func EncodeStream(input []Stream) []byte {
 	return []byte(res)
 }
 
-func EncodeXREADResponse(input map[string][]Stream) []byte {
+func EncodeXREADResponse(input map[string][]Stream, keys []string) []byte {
 	var buf bytes.Buffer
-	buf.WriteString("*" + strconv.Itoa(len(input)) + "\r\n")
-	for key, val := range input {
+	buf.WriteString("*" + strconv.Itoa(len(keys)) + "\r\n")
+	for _, key := range keys {
+		val := input[key]
 		buf.WriteString("*2\r\n")
 		buf.Write(EncodeBulkString(key))
 		buf.Write(EncodeStream(val))
