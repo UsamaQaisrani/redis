@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -14,11 +13,8 @@ func (s *Server) Echo(arg string) []byte {
 }
 
 func (s *Server) Set(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("SET", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	data := Data{}
+	return s.maybeQueue("SET", args, func() []byte {
+		data := Data{}
 	key := args[0]
 	val := args[1]
 	if len(args) == 4 {
@@ -26,23 +22,20 @@ func (s *Server) Set(args []string) []byte {
 		exp := args[3]
 		ms, err := strconv.Atoi(exp)
 		if err != nil {
-			return nil
+			return EncodeSimpleError("ERR invalid expire value")
 		}
 		if strings.ToUpper(timeFormat) == "PX" {
 			data.ExpiresAt = time.Now().Add(time.Duration(ms) * time.Millisecond).UnixMilli()
 		}
 	}
-	data.Content = val
-	DB.Store(key, data)
-	encodedResponse := EncodeSimpleString("OK")
-	return encodedResponse
+		data.Content = val
+		DB.Store(key, data)
+		return EncodeSimpleString("OK")
+	})
 }
 func (s *Server) Get(key string) []byte {
-	if s.inMulti() {
-		s.addToMulti("GET", []string{key})
-		return EncodeSimpleString("QUEUED")
-	}
-	val, ok := DB.Load(key)
+	return s.maybeQueue("GET", []string{key}, func() []byte {
+		val, ok := DB.Load(key)
 	if !ok {
 		return []byte("$-1\r\n")
 	}
@@ -50,26 +43,21 @@ func (s *Server) Get(key string) []byte {
 	data := val.(Data)
 
 	if data.ExpiresAt != 0 {
-		fmt.Println("Has Expiry:", data.ExpiresAt)
 		if time.Now().UnixMilli() >= data.ExpiresAt {
-			fmt.Println("Expired")
 			DB.Delete(key)
 			return []byte("$-1\r\n")
 		}
-		fmt.Println("Not Expired")
 	}
 
 	var encodedResponse []byte
-
 	switch data.Content.(type) {
 	case string:
-		strRes := data.Content.(string)
-		encodedResponse = EncodeBulkString(strRes)
+		encodedResponse = EncodeBulkString(data.Content.(string))
 	default:
-		fmt.Println("Unkown type for the value")
+		return []byte("$-1\r\n")
 	}
-
-	return encodedResponse
+		return encodedResponse
+	})
 }
 
 func (s *Server) Ping(arg string) []byte {
@@ -78,11 +66,8 @@ func (s *Server) Ping(arg string) []byte {
 }
 
 func (s *Server) RPush(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("RPUSH", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	key := args[0]
+	return s.maybeQueue("RPUSH", args, func() []byte {
+		key := args[0]
 	vals := args[1:]
 	dbVal, ok := DB.Load(key)
 	if !ok {
@@ -103,27 +88,22 @@ func (s *Server) RPush(args []string) []byte {
 		}
 	}
 
-	data.Content = list
-	DB.Store(key, data)
-	encodedResponse := EncodeInt(len(list))
-	return encodedResponse
+		data.Content = list
+		DB.Store(key, data)
+		return EncodeInt(len(list))
+	})
 }
 
 func (s *Server) LRange(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("LRANGE", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	key := args[0]
+	return s.maybeQueue("LRANGE", args, func() []byte {
+		key := args[0]
 	start, err := strconv.Atoi(args[1])
 	if err != nil {
-		fmt.Println("Unable to parse the range start")
-		return nil
+		return EncodeSimpleError("ERR value is not an integer or out of range")
 	}
 	end, err := strconv.Atoi(args[2])
 	if err != nil {
-		fmt.Println("Unable to parse the range end")
-		return nil
+		return EncodeSimpleError("ERR value is not an integer or out of range")
 	}
 
 	dbVal, ok := DB.Load(key)
@@ -153,16 +133,13 @@ func (s *Server) LRange(args []string) []byte {
 		end = len(list) - 1
 	}
 
-	encodedResponse := EncodeList(list[start : end+1])
-	return encodedResponse
+		return EncodeList(list[start : end+1])
+	})
 }
 
 func (s *Server) LPush(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("LPUSH", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	key := args[0]
+	return s.maybeQueue("LPUSH", args, func() []byte {
+		key := args[0]
 	items := args[1:]
 	dbVal, ok := DB.Load(key)
 	if !ok {
@@ -173,10 +150,10 @@ func (s *Server) LPush(args []string) []byte {
 	for _, item := range items {
 		list = append([]string{item}, list...)
 	}
-	data.Content = list
-	DB.Store(key, data)
-	encodedResponse := EncodeInt(len(list))
-	return encodedResponse
+		data.Content = list
+		DB.Store(key, data)
+		return EncodeInt(len(list))
+	})
 }
 
 func (s *Server) LLen(args []string) []byte {
@@ -192,11 +169,8 @@ func (s *Server) LLen(args []string) []byte {
 }
 
 func (s *Server) LPop(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("LPOP", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	key := args[0]
+	return s.maybeQueue("LPOP", args, func() []byte {
+		key := args[0]
 	itemsToRemove := 1
 	if len(args) == 2 {
 		itemsToRemove, _ = strconv.Atoi(args[1])
@@ -211,30 +185,22 @@ func (s *Server) LPop(args []string) []byte {
 		return []byte("$-1\r\n")
 	}
 
-	poppedItem := list[:itemsToRemove]
-	data.Content = list[itemsToRemove:]
-	DB.Store(key, data)
-
-	var encodedResponse []byte
-
-	if len(poppedItem) > 1 {
-		encodedResponse = EncodeList(poppedItem)
-	} else {
-		encodedResponse = EncodeBulkString(poppedItem[0])
-	}
-
-	return encodedResponse
+		poppedItem := list[:itemsToRemove]
+		data.Content = list[itemsToRemove:]
+		DB.Store(key, data)
+		if len(poppedItem) > 1 {
+			return EncodeList(poppedItem)
+		}
+		return EncodeBulkString(poppedItem[0])
+	})
 }
 
 func (s *Server) BLPop(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("BLPOP", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	key := args[0]
+	return s.maybeQueue("BLPOP", args, func() []byte {
+		key := args[0]
 	wait, err := strconv.ParseFloat(args[1], 64)
 	if err != nil {
-		return []byte("Unable to parse the time interval to int")
+		return EncodeSimpleError("ERR invalid timeout")
 	}
 	dbVal, ok := DB.Load(key)
 	var data Data
@@ -277,32 +243,24 @@ func (s *Server) BLPop(args []string) []byte {
 	case <-timeOutCh:
 		encodedResponse = []byte("*-1\r\n")
 	}
-	return encodedResponse
+		return encodedResponse
+	})
 }
 func (s *Server) Type(args []string) []byte {
 	key := args[0]
 	dbVal, ok := DB.Load(key)
 	var encodedResponse []byte
 	if !ok {
-		fmt.Printf("Content Type: %T", dbVal)
 		return EncodeSimpleString("none")
 	}
-
 	data := dbVal.(Data)
-
-	fmt.Printf("Content Type: %T", data.Content)
-
 	dType := getDataType(data)
 	encodedResponse = EncodeSimpleString(dType)
 	return encodedResponse
 }
 
 func (s *Server) XADD(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("XADD", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	var encodedResponse []byte
+	return s.maybeQueue("XADD", args, func() []byte {
 	key := args[0]
 	id := args[1]
 	dbVal, ok := DB.Load(key)
@@ -310,27 +268,26 @@ func (s *Server) XADD(args []string) []byte {
 		dbVal = Data{Content: map[string][]Stream{}}
 	}
 
-	if id == "0-0" {
-		encodedResponse = EncodeSimpleError("ERR The ID specified in XADD must be greater than 0-0")
-		return encodedResponse
-	}
+		if id == "0-0" {
+			return EncodeSimpleError("ERR The ID specified in XADD must be greater than 0-0")
+		}
 
 	data := dbVal.(Data)
 	streams := data.Content.(map[string][]Stream)
-	chs := data.Waiting["XADD"]
-	fmt.Println(len(chs))
-	fmt.Println(data.ExpiresAt)
+	var chs []chan string
+	if data.Waiting != nil {
+		chs = data.Waiting["XADD"]
+	}
 	if len(chs) > 0 && (data.ExpiresAt > time.Now().UnixMilli() || data.ExpiresAt == 0) {
 		ch := chs[0]
 		data.Waiting["XADD"] = chs[1:]
 		ch <- key
 	}
 
-	newId, err := generateStreamId(streams, key, id)
-	if err != nil && newId == "" {
-		encodedResponse = EncodeSimpleError("ERR The ID specified in XADD is equal or smaller than the target stream top item")
-		return encodedResponse
-	}
+		newId, err := generateStreamId(streams, key, id)
+		if err != nil && newId == "" {
+			return EncodeSimpleError("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+		}
 
 	pairs := map[string]string{}
 	i := 2
@@ -342,10 +299,11 @@ func (s *Server) XADD(args []string) []byte {
 		i += 2
 	}
 
-	streams[key] = append(streams[key], Stream{StreamID: newId, KeyValuePairs: pairs})
-	data.Content = streams
-	DB.Store(key, data)
-	return EncodeBulkString(newId)
+		streams[key] = append(streams[key], Stream{StreamID: newId, KeyValuePairs: pairs})
+		data.Content = streams
+		DB.Store(key, data)
+		return EncodeBulkString(newId)
+	})
 }
 
 func (s *Server) XRANGE(args []string) []Stream {
@@ -436,20 +394,14 @@ func (s *Server) XREAD(args []string) []byte {
 		streamsMap[key] = entries
 	}
 
-	fmt.Println("MAP:", streamsMap)
-	fmt.Println("Block:", shouldBlock)
-
 	if len(streamsMap[keys[0]]) == 0 && shouldBlock {
-		fmt.Println("Blocking")
 		itemCh := make(chan string)
 		var timeOutCh <-chan time.Time
 
 		timeOut, err := strconv.ParseFloat(args[1], 64)
 		if err != nil {
-			fmt.Println(err.Error())
-			return nil
+			return EncodeSimpleError("ERR invalid timeout")
 		}
-		fmt.Println("Timeout:", timeOut)
 		if timeOut > 0 {
 			timeOutCh = time.After(time.Duration(timeOut) * time.Millisecond)
 		}
@@ -472,9 +424,7 @@ func (s *Server) XREAD(args []string) []byte {
 			entries := s.XRANGE(currArgs)
 			streamsMap[newKey] = entries
 			encodedResponse = EncodeXREADResponse(streamsMap, keys)
-			fmt.Println("Got channel response", newKey)
 		case <-timeOutCh:
-			fmt.Println("TimedOut")
 			encodedResponse = []byte("*-1\r\n")
 		}
 		return encodedResponse
@@ -486,15 +436,12 @@ func (s *Server) XREAD(args []string) []byte {
 }
 
 func (s *Server) Incr(args []string) []byte {
-	if s.inMulti() {
-		s.addToMulti("INCR", args)
-		return EncodeSimpleString("QUEUED")
-	}
-	key := args[0]
+	return s.maybeQueue("INCR", args, func() []byte {
+		key := args[0]
 	dbVal, ok := DB.Load(key)
 	var data Data
 	if !ok {
-		data = Data{Content: 1}
+		data = Data{Content: "0"}
 	} else {
 		data = dbVal.(Data)
 	}
@@ -506,12 +453,11 @@ func (s *Server) Incr(args []string) []byte {
 	if err != nil {
 		return EncodeSimpleError("ERR value is not an integer or out of range")
 	}
-	numVal++
-	data.Content = strconv.Itoa(numVal)
-	fmt.Println("Incr:", data.Content)
-	DB.Store(key, data)
-	encodedResponse := EncodeInt(numVal)
-	return encodedResponse
+		numVal++
+		data.Content = strconv.Itoa(numVal)
+		DB.Store(key, data)
+		return EncodeInt(numVal)
+	})
 }
 
 func (s *Server) Multi(args []string) []byte {
@@ -552,4 +498,8 @@ func (s *Server) Discard() []byte {
 	}
 	s.TxQueue = nil
 	return EncodeSimpleString("OK")
+}
+
+func (s *Server) Info(args []string) []byte {
+	return EncodeBulkString("role:" + s.SType.Role)
 }

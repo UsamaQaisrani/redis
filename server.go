@@ -7,14 +7,21 @@ import (
 	"strings"
 )
 
-func runServer() {
-	l, err := net.Listen("tcp", "0.0.0.0:6379")
+func runServer(ip string, port int, replica bool) {
+	url := fmt.Sprintf("%s:%d", ip, port)
+	l, err := net.Listen("tcp", url)
 	if err != nil {
-		fmt.Println("Failed to bind to port 6379")
+		fmt.Printf("Failed to bind to port %d", port)
 		os.Exit(1)
 	}
+	defer l.Close()
 	for {
-		server := Server{}
+		server := Server{SType: ServerType{ip: ip, port: port}}
+		if replica {
+			server.SType.Role = "slave"
+		} else {
+			server.SType.Role = "master"
+		}
 		conn, err := l.Accept()
 		server.Conn = conn
 		if err != nil {
@@ -68,48 +75,36 @@ func (s *Server) readCommand() (command string, args []string) {
 	return command, args
 }
 
-func (s *Server) handleCommands(command string, args []string) {
-	var response []byte
-	switch strings.ToUpper(command) {
-	case "PING":
-		response = s.Ping("PONG")
-	case "ECHO":
-		response = s.Echo(args[0])
-	case "SET":
-		response = s.Set(args)
-	case "GET":
-		response = s.Get(args[0])
-	case "RPUSH":
-		response = s.RPush(args)
-	case "LRANGE":
-		response = s.LRange(args)
-	case "LPUSH":
-		response = s.LPush(args)
-	case "LLEN":
-		response = s.LLen(args)
-	case "LPOP":
-		response = s.LPop(args)
-	case "BLPOP":
-		response = s.BLPop(args)
-	case "TYPE":
-		response = s.Type(args)
-	case "XADD":
-		response = s.XADD(args)
-	case "XRANGE":
-		streams := s.XRANGE(args)
-		response = EncodeStream(streams)
-	case "XREAD":
-		response = s.XREAD(args)
-	case "INCR":
-		response = s.Incr(args)
-	case "MULTI":
-		response = s.Multi(args)
-	case "EXEC":
-		response = s.Exec()
-	case "DISCARD":
-		response = s.Discard()
+type commandHandler func(*Server, []string) []byte
 
-	default:
+var commandHandlers = map[string]commandHandler{
+	"PING":   func(s *Server, args []string) []byte { return s.Ping("PONG") },
+	"ECHO":   func(s *Server, args []string) []byte { return s.Echo(args[0]) },
+	"SET":    func(s *Server, args []string) []byte { return s.Set(args) },
+	"GET":    func(s *Server, args []string) []byte { return s.Get(args[0]) },
+	"RPUSH":  func(s *Server, args []string) []byte { return s.RPush(args) },
+	"LRANGE": func(s *Server, args []string) []byte { return s.LRange(args) },
+	"LPUSH":  func(s *Server, args []string) []byte { return s.LPush(args) },
+	"LLEN":   func(s *Server, args []string) []byte { return s.LLen(args) },
+	"LPOP":   func(s *Server, args []string) []byte { return s.LPop(args) },
+	"BLPOP":  func(s *Server, args []string) []byte { return s.BLPop(args) },
+	"TYPE":   func(s *Server, args []string) []byte { return s.Type(args) },
+	"XADD":   func(s *Server, args []string) []byte { return s.XADD(args) },
+	"XRANGE": func(s *Server, args []string) []byte { return EncodeStream(s.XRANGE(args)) },
+	"XREAD":  func(s *Server, args []string) []byte { return s.XREAD(args) },
+	"INCR":   func(s *Server, args []string) []byte { return s.Incr(args) },
+	"MULTI":  func(s *Server, args []string) []byte { return s.Multi(args) },
+	"EXEC":   func(s *Server, args []string) []byte { return s.Exec() },
+	"DISCARD": func(s *Server, args []string) []byte { return s.Discard() },
+	"INFO":   func(s *Server, args []string) []byte { return s.Info(args) },
+}
+
+func (s *Server) handleCommands(command string, args []string) {
+	handler, ok := commandHandlers[strings.ToUpper(command)]
+	var response []byte
+	if ok {
+		response = handler(s, args)
+	} else {
 		response = []byte("-ERR unknown command\r\n")
 	}
 	s.Conn.Write(response)

@@ -209,3 +209,11 @@ func (s *Server) inMulti() bool {
 func (s *Server) addToMulti(command string, args []string) {
 	s.TxQueue = append(s.TxQueue, append([]string{command}, args...))
 }
+
+func (s *Server) maybeQueue(cmd string, args []string, fn func() []byte) []byte {
+	if s.inMulti() {
+		s.addToMulti(cmd, args)
+		return EncodeSimpleString("QUEUED")
+	}
+	return fn()
+}
