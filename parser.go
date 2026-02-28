@@ -22,7 +22,7 @@ func decode(input string, pos int) (any, int, error) {
 	case '$':
 		return decodeString(input, pos)
 	}
-	return nil, pos, errors.New("Unable to decode the input")
+	return nil, pos, errors.New("unable to decode the input")
 }
 
 func decodeString(input string, pos int) (string, int, error) {
@@ -98,6 +98,10 @@ func EncodeList(input []string) []byte {
 		str += currItem
 	}
 	return []byte(str)
+}
+
+func EncodeCommand(args ...string) []byte {
+	return EncodeList(args)
 }
 
 func EncodeSimpleError(input string) []byte {

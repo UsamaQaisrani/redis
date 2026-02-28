@@ -501,5 +501,10 @@ func (s *Server) Discard() []byte {
 }
 
 func (s *Server) Info(args []string) []byte {
-	return EncodeBulkString("role:" + s.SType.Role)
+	s.SType.master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+	s.SType.master_repl_offset = 0
+	res := "role:" + s.SType.Role + "\r\n"
+	res += "master_replid" + ":" + s.SType.master_replid + "\r\n"
+	res += "master_repl_offset" + ":" + strconv.FormatInt(s.SType.master_repl_offset, 10) + "\r\n"
+	return EncodeBulkString(res)
 }

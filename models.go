@@ -16,7 +16,7 @@ type Server struct {
 	mu      sync.Mutex
 	BLOCKQ  []Command
 	TxQueue [][]string
-	SType ServerType
+	SType   ServerType
 }
 
 type Data struct {
@@ -36,7 +36,9 @@ type Stream struct {
 }
 
 type ServerType struct {
-	Role string
-	ip  string
-	port int
+	Role               string
+	ip                 string
+	port               int
+	master_replid      string
+	master_repl_offset int64
 }
